@@ -13,6 +13,7 @@ import os
 
 class TimestampConverterApp:
     def __init__(self, root):
+        """Initialize the application with the main window."""
         self.root = root
         self.root.title("PI Tag Timestamp Converter")
         self.root.geometry("1200x700")
@@ -26,6 +27,7 @@ class TimestampConverterApp:
         self.setup_ui()
 
     def setup_ui(self):
+        """Build the main UI with original/converted data panels and controls."""
         # Main container with padding
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
