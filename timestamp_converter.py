@@ -58,6 +58,7 @@ class TimestampConverterApp:
 
         ttk.Label(left_controls, text="  Hour offset:").pack(side=tk.LEFT, padx=(10, 5))
         self.offset_var = tk.StringVar(value="0")
+        self.offset_var.trace_add("write", self.on_offset_changed)
         self.offset_entry = ttk.Entry(left_controls, textvariable=self.offset_var, width=5)
         self.offset_entry.pack(side=tk.LEFT)
 
@@ -139,6 +140,10 @@ class TimestampConverterApp:
 
     def on_custom_tagname_changed(self, *args):
         """Handle changes to custom tagname with debounce."""
+        self.schedule_refresh()
+
+    def on_offset_changed(self, *args):
+        """Handle changes to hour offset with debounce."""
         self.schedule_refresh()
 
     def schedule_refresh(self):
