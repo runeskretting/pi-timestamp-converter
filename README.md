@@ -43,8 +43,8 @@ The converted CSV is saved without headers. Quality column is dropped.
 
 Example output (with tagname):
 ```
-P-13-PT0105_X.VALUE_basic_1,03-Dec-2025 05:28:11,651.261902
-P-13-PT0105_X.VALUE_basic_1,03-Dec-2025 05:28:13,651.261841
+SENSOR_001,03-Dec-2025 05:28:11,651.261902
+SENSOR_001,03-Dec-2025 05:28:13,651.261841
 ```
 
 ## Requirements
