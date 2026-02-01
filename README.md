@@ -22,6 +22,31 @@ Use the **Hour offset** field to adjust timestamps when OPC server data is in a 
 
 The date automatically adjusts when the offset crosses midnight.
 
+### Tagname Option
+
+Use the **Tagname** dropdown to include a tag identifier in the output:
+
+| Option | Behavior |
+|--------|----------|
+| None | No tagname column in output |
+| Filename | Uses the input filename (without extension) as tagname |
+| Custom | Pre-fills with filename, allows editing. Output updates as you type. |
+
+## Output Format
+
+The converted CSV is saved without headers. Quality column is dropped.
+
+| Tagname Setting | Output Columns |
+|-----------------|----------------|
+| None | Timestamp, Value |
+| Filename/Custom | Tagname, Timestamp, Value |
+
+Example output (with tagname):
+```
+P-13-PT0105_X.VALUE_basic_1,03-Dec-2025 05:28:11,651.261902
+P-13-PT0105_X.VALUE_basic_1,03-Dec-2025 05:28:13,651.261841
+```
+
 ## Requirements
 
 - Python 3.8+
