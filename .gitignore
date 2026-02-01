@@ -23,6 +23,7 @@ build/
 
 # Output files
 *.csv
+!sample.csv
 
 # Environment variables
 .env
