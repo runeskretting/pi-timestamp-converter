@@ -23,6 +23,7 @@ class TimestampConverterApp:
         self.converted_df = None
         self.current_filename = None
         self.pending_update = None  # For debounced updates
+        self.previous_tagname_option = "None"  # Track previous selection
 
         self.setup_ui()
 
@@ -128,7 +129,15 @@ class TimestampConverterApp:
 
     def on_tagname_option_changed(self, event=None):
         """Show/hide custom tagname entry based on selection."""
-        if self.tagname_option_var.get() == "Custom":
+        current_option = self.tagname_option_var.get()
+
+        # Only process if the selection actually changed
+        if current_option == self.previous_tagname_option:
+            return
+
+        self.previous_tagname_option = current_option
+
+        if current_option == "Custom":
             # Pre-fill with filename if available
             if self.current_filename:
                 self.custom_tagname_var.set(self.current_filename)
