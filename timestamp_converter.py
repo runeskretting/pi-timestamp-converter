@@ -21,8 +21,6 @@ class TimestampConverterApp:
 
         self.original_df = None
         self.converted_df = None
-        self.current_filename = None
-        self.pending_update = None  # For debounced updates
         self.previous_tagname_option = "None"  # Track previous selection
 
         self.setup_ui()
@@ -40,10 +38,10 @@ class TimestampConverterApp:
 
         # Left panel - Original CSV
         left_label = ttk.Label(main_frame, text="Original CSV (US Format)", font=("", 12, "bold"))
-        left_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        left_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 5))
 
         left_frame = ttk.Frame(main_frame)
-        left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5))
+        left_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         left_frame.columnconfigure(0, weight=1)
         left_frame.rowconfigure(0, weight=1)
 
@@ -52,23 +50,26 @@ class TimestampConverterApp:
 
         # Upload button and hour offset in a row
         left_controls = ttk.Frame(main_frame)
-        left_controls.grid(row=2, column=0, sticky="w", pady=10)
+        left_controls.grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=10)
 
-        upload_btn = ttk.Button(left_controls, text="Upload CSV File", command=self.upload_csv)
+        upload_btn = ttk.Button(left_controls, text="Upload CSV Files", command=self.upload_csv)
         upload_btn.pack(side=tk.LEFT)
 
         ttk.Label(left_controls, text="  Hour offset:").pack(side=tk.LEFT, padx=(10, 5))
         self.offset_var = tk.StringVar(value="0")
-        self.offset_var.trace_add("write", self.on_offset_changed)
         self.offset_entry = ttk.Entry(left_controls, textvariable=self.offset_var, width=5)
         self.offset_entry.pack(side=tk.LEFT)
 
-        ttk.Label(left_controls, text="  Tagname:").pack(side=tk.LEFT, padx=(10, 5))
+        # Tagname section in its own frame to keep entry next to dropdown
+        tagname_frame = ttk.Frame(left_controls)
+        tagname_frame.pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Label(tagname_frame, text="Tagname:").pack(side=tk.LEFT, padx=(0, 5))
         self.tagname_option_var = tk.StringVar(value="None")
         self.tagname_combo = ttk.Combobox(
-            left_controls,
+            tagname_frame,
             textvariable=self.tagname_option_var,
-            values=["None", "Filename", "Custom"],
+            values=["None", "Custom"],
             state="readonly",
             width=8
         )
@@ -76,26 +77,52 @@ class TimestampConverterApp:
         self.tagname_combo.bind("<<ComboboxSelected>>", self.on_tagname_option_changed)
 
         self.custom_tagname_var = tk.StringVar()
-        self.custom_tagname_var.trace_add("write", self.on_custom_tagname_changed)
-        self.custom_tagname_entry = ttk.Entry(left_controls, textvariable=self.custom_tagname_var, width=20)
+        self.custom_tagname_entry = ttk.Entry(tagname_frame, textvariable=self.custom_tagname_var, width=30)
         self.custom_tagname_entry.pack(side=tk.LEFT, padx=(5, 0))
         self.custom_tagname_entry.pack_forget()  # Hidden by default
 
+        self.remove_duplicates_var = tk.IntVar(value=0)
+        remove_dup_check = ttk.Checkbutton(
+            left_controls,
+            text="Remove duplicate timestamps",
+            variable=self.remove_duplicates_var,
+            onvalue=1,
+            offvalue=0
+        )
+        remove_dup_check.pack(side=tk.LEFT, padx=(15, 0))
+
+        apply_btn = ttk.Button(left_controls, text="Apply", command=self.apply_conversion)
+        apply_btn.pack(side=tk.RIGHT)
+
         # Right panel - Converted CSV
         right_label = ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold"))
-        right_label.grid(row=0, column=1, sticky="w", pady=(0, 5))
+        right_label.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 5))
 
         right_frame = ttk.Frame(main_frame)
-        right_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 0))
+        right_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         right_frame.columnconfigure(0, weight=1)
         right_frame.rowconfigure(0, weight=1)
 
         # Converted data treeview with scrollbars
         self.converted_tree = self.create_treeview(right_frame)
 
-        # Download button
-        download_btn = ttk.Button(main_frame, text="Download Converted CSV", command=self.download_csv)
-        download_btn.grid(row=2, column=1, sticky="w", pady=10)
+        # Right panel controls
+        right_controls = ttk.Frame(main_frame)
+        right_controls.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=10)
+
+        ttk.Label(right_controls, text="Encoding:").pack(side=tk.LEFT)
+        self.encoding_var = tk.StringVar(value="UTF-8")
+        encoding_combo = ttk.Combobox(
+            right_controls,
+            textvariable=self.encoding_var,
+            values=["UTF-8", "ANSI"],
+            state="readonly",
+            width=6
+        )
+        encoding_combo.pack(side=tk.LEFT, padx=(5, 0))
+
+        download_btn = ttk.Button(right_controls, text="Download Converted CSV", command=self.download_csv)
+        download_btn.pack(side=tk.RIGHT)
 
         # Status bar
         self.status_var = tk.StringVar(value="Ready - Upload a CSV file to begin")
@@ -138,49 +165,26 @@ class TimestampConverterApp:
         self.previous_tagname_option = current_option
 
         if current_option == "Custom":
-            # Pre-fill with filename if available
-            if self.current_filename:
-                self.custom_tagname_var.set(self.current_filename)
             self.custom_tagname_entry.pack(side=tk.LEFT, padx=(5, 0))
         else:
             self.custom_tagname_entry.pack_forget()
-        # Refresh display when option changes
-        self.schedule_refresh()
 
-    def on_custom_tagname_changed(self, *args):
-        """Handle changes to custom tagname with debounce."""
-        self.schedule_refresh()
-
-    def on_offset_changed(self, *args):
-        """Handle changes to hour offset with debounce."""
-        self.schedule_refresh()
-
-    def schedule_refresh(self):
-        """Schedule a debounced refresh of the converted display."""
-        # Cancel any pending update
-        if self.pending_update:
-            self.root.after_cancel(self.pending_update)
-        # Schedule new update after 500ms
-        if self.original_df is not None:
-            self.pending_update = self.root.after(500, self.refresh_converted_display)
-
-    def refresh_converted_display(self):
-        """Refresh the converted data display with current settings."""
-        self.pending_update = None
+    def apply_conversion(self):
+        """Apply conversion settings and update the preview panel."""
         if self.original_df is None:
+            messagebox.showwarning("Warning", "No data loaded. Please upload CSV files first.")
             return
 
         try:
             hour_offset = int(self.offset_var.get())
         except ValueError:
-            hour_offset = 0
+            messagebox.showerror("Error", "Hour offset must be a valid integer (e.g., -5, 0, +3)")
+            return
 
         # Determine tagname
         tagname_option = self.tagname_option_var.get()
         tagname = None
-        if tagname_option == "Filename":
-            tagname = self.current_filename
-        elif tagname_option == "Custom":
+        if tagname_option == "Custom":
             tagname = self.custom_tagname_var.get().strip() or None
 
         # Convert timestamps
@@ -201,8 +205,21 @@ class TimestampConverterApp:
                 "Value": self.original_df["Value"]
             })
 
+        # Remove duplicate timestamps if checkbox is checked
+        duplicates_removed = 0
+        if self.remove_duplicates_var.get() == 1:
+            original_count = len(self.converted_df)
+            self.converted_df = self.converted_df.drop_duplicates(subset=["Timestamp"], keep="first").reset_index(drop=True)
+            duplicates_removed = original_count - len(self.converted_df)
+
         # Update display
         self.populate_treeview(self.converted_tree, self.converted_df)
+
+        # Update status
+        row_count = len(self.converted_df)
+        offset_msg = f" (offset: {hour_offset:+d}h)" if hour_offset != 0 else ""
+        dup_msg = f", {duplicates_removed} duplicates removed" if duplicates_removed > 0 else ""
+        self.status_var.set(f"Preview updated - {row_count} rows converted{offset_msg}{dup_msg}")
 
     def convert_timestamp(self, timestamp_str, hour_offset=0):
         """
@@ -265,84 +282,80 @@ class TimestampConverterApp:
             values = [str(v) for v in row]
             tree.insert("", tk.END, values=values)
 
+    def parse_timestamp_for_sort(self, timestamp_str):
+        """Parse OPC timestamp for sorting purposes."""
+        try:
+            timestamp_str = str(timestamp_str).strip().strip('"')
+
+            # Remove milliseconds (everything after AM/PM)
+            if " AM." in timestamp_str:
+                timestamp_str = timestamp_str.split(" AM.")[0] + " AM"
+            elif " PM." in timestamp_str:
+                timestamp_str = timestamp_str.split(" PM.")[0] + " PM"
+
+            # Parse OPC format: MM/DD/YYYY H:MM:SS AM/PM
+            return datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M:%S %p")
+        except ValueError:
+            # Return a default datetime for unparseable timestamps
+            return datetime.min
+
     def upload_csv(self):
-        """Handle file upload (space-delimited OPC data or CSV)."""
-        file_path = filedialog.askopenfilename(
-            title="Select Data File",
+        """Handle multiple file upload (space-delimited OPC data or CSV)."""
+        file_paths = filedialog.askopenfilenames(
+            title="Select Data Files",
             filetypes=[("All supported", "*.csv *.txt"), ("CSV files", "*.csv"), ("Text files", "*.txt"), ("All files", "*.*")]
         )
 
-        if not file_path:
+        if not file_paths:
             return
 
         try:
-            # Validate and parse hour offset
-            try:
-                hour_offset = int(self.offset_var.get())
-            except ValueError:
-                messagebox.showerror("Error", "Hour offset must be a valid integer (e.g., -5, 0, +3)")
-                return
+            # Read and combine all selected files
+            dataframes = []
+            for file_path in file_paths:
+                # Read comma-delimited file without headers (OPC format)
+                # Format: 12/3/2025 5:28:11 AM.7480000,651.261902,0x400c0
+                df = pd.read_csv(
+                    file_path,
+                    header=None,
+                    names=["Timestamp", "Value", "Quality"]
+                )
+                dataframes.append(df)
 
-            # Read comma-delimited file without headers (OPC format)
-            # Format: 12/3/2025 5:28:11 AM.7480000,651.261902,0x400c0
-            self.original_df = pd.read_csv(
-                file_path,
-                header=None,
-                names=["Timestamp", "Value", "Quality"]
-            )
+            # Concatenate all dataframes
+            self.original_df = pd.concat(dataframes, ignore_index=True)
 
-            # Store filename (without extension) for tagname option
-            self.current_filename = os.path.splitext(os.path.basename(file_path))[0]
+            # Parse timestamps for sorting
+            self.original_df["_parsed_ts"] = self.original_df["Timestamp"].apply(self.parse_timestamp_for_sort)
+            self.original_df = self.original_df.sort_values("_parsed_ts").reset_index(drop=True)
+
+            # Drop the helper column
+            self.original_df = self.original_df.drop(columns=["_parsed_ts"])
+
+            # Clear the converted preview (user must click Apply)
+            self.converted_df = None
+            self.converted_tree.delete(*self.converted_tree.get_children())
 
             # Display original data
             self.populate_treeview(self.original_tree, self.original_df)
 
-            # Determine tagname
-            tagname_option = self.tagname_option_var.get()
-            tagname = None
-            if tagname_option == "Filename":
-                tagname = self.current_filename
-            elif tagname_option == "Custom":
-                # Pre-fill with filename if empty
-                if not self.custom_tagname_var.get().strip():
-                    self.custom_tagname_var.set(self.current_filename)
-                tagname = self.custom_tagname_var.get().strip() or None
-
-            # Convert timestamps with hour offset
-            converted_timestamps = self.original_df["Timestamp"].apply(
-                lambda ts: self.convert_timestamp(ts, hour_offset)
-            )
-
-            # Build output dataframe: tagname (optional), timestamp, value
-            if tagname:
-                self.converted_df = pd.DataFrame({
-                    "Tagname": tagname,
-                    "Timestamp": converted_timestamps,
-                    "Value": self.original_df["Value"]
-                })
-            else:
-                self.converted_df = pd.DataFrame({
-                    "Timestamp": converted_timestamps,
-                    "Value": self.original_df["Value"]
-                })
-
-            # Display converted data
-            self.populate_treeview(self.converted_tree, self.converted_df)
-
             # Update status
             row_count = len(self.original_df)
-            filename = os.path.basename(file_path)
-            offset_msg = f" (offset: {hour_offset:+d}h)" if hour_offset != 0 else ""
-            self.status_var.set(f"Loaded: {filename} - {row_count} rows converted{offset_msg}")
+            file_count = len(file_paths)
+            if file_count == 1:
+                filename = os.path.basename(file_paths[0])
+                self.status_var.set(f"Loaded: {filename} - {row_count} rows. Click Apply to convert.")
+            else:
+                self.status_var.set(f"Loaded {file_count} files - {row_count} total rows. Click Apply to convert.")
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load file:\n{str(e)}")
-            self.status_var.set("Error loading file")
+            messagebox.showerror("Error", f"Failed to load files:\n{str(e)}")
+            self.status_var.set("Error loading files")
 
     def download_csv(self):
         """Handle converted CSV download."""
         if self.converted_df is None:
-            messagebox.showwarning("Warning", "No data to download. Please upload a CSV file first.")
+            messagebox.showwarning("Warning", "No converted data to download. Please upload files and click Apply first.")
             return
 
         file_path = filedialog.asksaveasfilename(
@@ -355,8 +368,10 @@ class TimestampConverterApp:
             return
 
         try:
-            self.converted_df.to_csv(file_path, index=False, header=False)
-            self.status_var.set(f"Saved: {os.path.basename(file_path)}")
+            # Get selected encoding
+            encoding = "utf-8" if self.encoding_var.get() == "UTF-8" else "cp1252"
+            self.converted_df.to_csv(file_path, index=False, header=False, encoding=encoding)
+            self.status_var.set(f"Saved: {os.path.basename(file_path)} ({self.encoding_var.get()})")
             messagebox.showinfo("Success", f"File saved successfully:\n{file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save file:\n{str(e)}")
