@@ -106,11 +106,9 @@ class TimestampConverterApp:
         self._apply_default_bg = self.apply_btn.cget("background")
 
         # Highlight Apply button when any option changes
-        self.offset_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.tagname_option_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.custom_tagname_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.remove_bad_quality_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.remove_duplicates_var.trace_add("write", lambda *_: self._highlight_apply())
+        for var in (self.offset_var, self.tagname_option_var, self.custom_tagname_var,
+                    self.remove_bad_quality_var, self.remove_duplicates_var):
+            var.trace_add("write", lambda *_: self._highlight_apply())
 
         # Right panel - Converted CSV
         right_label = ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold"))
@@ -121,63 +119,23 @@ class TimestampConverterApp:
         filter_frame.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(0, 5))
 
         # Start filter
-        self.start_filter_var = tk.IntVar(value=0)
-        start_check = ttk.Checkbutton(
-            filter_frame, text="Start:",
-            variable=self.start_filter_var,
-            onvalue=1, offvalue=0,
-            command=self._toggle_start_filter
-        )
-        start_check.pack(side=tk.LEFT)
-
-        self.start_date_var = tk.StringVar(value="01-Jan-2025")
-        self.start_date_entry = ttk.Entry(
-            filter_frame, textvariable=self.start_date_var,
-            width=12, state="disabled"
-        )
-        self.start_date_entry.pack(side=tk.LEFT, padx=(5, 0))
-
-        self.start_time_var = tk.StringVar(value="00:00:00")
-        self.start_time_entry = ttk.Entry(
-            filter_frame, textvariable=self.start_time_var,
-            width=8, state="disabled"
-        )
-        self.start_time_entry.pack(side=tk.LEFT, padx=(5, 0))
+        self.start_filter_var, self.start_date_var, self.start_time_var, \
+            self.start_date_entry, self.start_time_entry = \
+            self._create_filter_row(filter_frame, "Start:", "01-Jan-2025", "00:00:00")
 
         # Spacer
         ttk.Label(filter_frame, text="   ").pack(side=tk.LEFT)
 
         # End filter
-        self.end_filter_var = tk.IntVar(value=0)
-        end_check = ttk.Checkbutton(
-            filter_frame, text="End:",
-            variable=self.end_filter_var,
-            onvalue=1, offvalue=0,
-            command=self._toggle_end_filter
-        )
-        end_check.pack(side=tk.LEFT)
+        self.end_filter_var, self.end_date_var, self.end_time_var, \
+            self.end_date_entry, self.end_time_entry = \
+            self._create_filter_row(filter_frame, "End:", "31-Dec-2025", "23:59:59")
 
-        self.end_date_var = tk.StringVar(value="31-Dec-2025")
-        self.end_date_entry = ttk.Entry(
-            filter_frame, textvariable=self.end_date_var,
-            width=12, state="disabled"
-        )
-        self.end_date_entry.pack(side=tk.LEFT, padx=(5, 0))
-
-        self.end_time_var = tk.StringVar(value="23:59:59")
-        self.end_time_entry = ttk.Entry(
-            filter_frame, textvariable=self.end_time_var,
-            width=8, state="disabled"
-        )
-        self.end_time_entry.pack(side=tk.LEFT, padx=(5, 0))
-
-        # Highlight Apply button when filter options change
-        self.start_filter_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.end_filter_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.start_date_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.end_date_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.start_time_var.trace_add("write", lambda *_: self._highlight_apply())
-        self.end_time_var.trace_add("write", lambda *_: self._highlight_apply())
+        # Highlight Apply button when any filter option changes
+        for var in (self.start_filter_var, self.end_filter_var,
+                    self.start_date_var, self.end_date_var,
+                    self.start_time_var, self.end_time_var):
+            var.trace_add("write", lambda *_: self._highlight_apply())
 
         # Converted data treeview with scrollbars (below filters)
         right_frame = ttk.Frame(main_frame)
@@ -264,6 +222,26 @@ class TimestampConverterApp:
         else:
             self.custom_tagname_entry.pack_forget()
 
+    def _create_filter_row(self, parent, label, default_date, default_time):
+        """Create a filter checkbox with date and time entry fields."""
+        filter_var = tk.IntVar(value=0)
+        date_var = tk.StringVar(value=default_date)
+        time_var = tk.StringVar(value=default_time)
+
+        date_entry = ttk.Entry(parent, textvariable=date_var, width=12, state="disabled")
+        time_entry = ttk.Entry(parent, textvariable=time_var, width=8, state="disabled")
+
+        check = ttk.Checkbutton(
+            parent, text=label, variable=filter_var,
+            onvalue=1, offvalue=0,
+            command=lambda: self._toggle_filter(filter_var, date_entry, time_entry)
+        )
+        check.pack(side=tk.LEFT)
+        date_entry.pack(side=tk.LEFT, padx=(5, 0))
+        time_entry.pack(side=tk.LEFT, padx=(5, 0))
+
+        return filter_var, date_var, time_var, date_entry, time_entry
+
     def _highlight_apply(self):
         """Highlight the Apply button to indicate pending changes."""
         self.apply_btn.configure(bg="#ffcc00", activebackground="#ffdd33")
@@ -272,23 +250,11 @@ class TimestampConverterApp:
         """Reset the Apply button to its default appearance."""
         self.apply_btn.configure(bg=self._apply_default_bg, activebackground=self._apply_default_bg)
 
-    def _toggle_start_filter(self):
-        """Enable/disable start filter date and time fields."""
-        if self.start_filter_var.get() == 1:
-            self.start_date_entry.configure(state="normal")
-            self.start_time_entry.configure(state="normal")
-        else:
-            self.start_date_entry.configure(state="disabled")
-            self.start_time_entry.configure(state="disabled")
-
-    def _toggle_end_filter(self):
-        """Enable/disable end filter date and time fields."""
-        if self.end_filter_var.get() == 1:
-            self.end_date_entry.configure(state="normal")
-            self.end_time_entry.configure(state="normal")
-        else:
-            self.end_date_entry.configure(state="disabled")
-            self.end_time_entry.configure(state="disabled")
+    def _toggle_filter(self, var, date_entry, time_entry):
+        """Enable/disable filter date and time fields based on checkbox."""
+        state = "normal" if var.get() == 1 else "disabled"
+        date_entry.configure(state=state)
+        time_entry.configure(state=state)
 
     def _parse_filter_datetime(self, date_str, time_str, default_time):
         """Parse date (DD-Mon-YYYY) and time (HH:MM:SS) strings into a datetime."""
@@ -326,10 +292,17 @@ class TimestampConverterApp:
             source_df = source_df[source_df["Quality"].astype(str).str.strip() != "0x100400c0"].reset_index(drop=True)
             bad_quality_removed = original_count - len(source_df)
 
-        # Convert timestamps
-        converted_timestamps = source_df["Timestamp"].apply(
-            lambda ts: self.convert_timestamp(ts, hour_offset)
-        )
+        # Vectorized timestamp conversion
+        cleaned = source_df["Timestamp"].astype(str).str.strip().str.strip('"')
+        cleaned = cleaned.str.replace(r' ([AP]M)\.\d+', r' \1', regex=True)
+        parsed = pd.to_datetime(cleaned, format="%m/%d/%Y %I:%M:%S %p", errors="coerce")
+        if hour_offset != 0:
+            parsed = parsed + pd.Timedelta(hours=hour_offset)
+        converted_timestamps = parsed.dt.strftime("%d-%b-%Y %H:%M:%S")
+        # Keep original string for rows that failed to parse
+        failed = parsed.isna()
+        if failed.any():
+            converted_timestamps[failed] = source_df["Timestamp"][failed]
 
         # Build output dataframe
         if tagname:
@@ -395,38 +368,21 @@ class TimestampConverterApp:
         dup_msg = f", {duplicates_removed} duplicates removed" if duplicates_removed > 0 else ""
         self.status_var.set(f"Preview updated - {row_count} rows converted{offset_msg}{bad_msg}{filter_msg}{dup_msg}")
 
-    def convert_timestamp(self, timestamp_str, hour_offset=0):
-        """
-        Convert OPC server timestamp to DD-Mon-YYYY HH:MM:SS format.
+    def _parse_opc_timestamp(self, timestamp_str):
+        """Parse OPC server timestamp into a datetime object.
 
         Input: "11/25/2025 2:02:03 PM.2390000" (MM/DD/YYYY H:MM:SS AM/PM.milliseconds)
-        Output: "25-Nov-2025 14:02:03" (DD-Mon-YYYY HH:MM:SS, 24-hour, no milliseconds)
-
-        Args:
-            timestamp_str: The timestamp string to convert
-            hour_offset: Hours to add/subtract for timezone adjustment
+        Returns datetime object, or datetime.min if parsing fails.
         """
         try:
             timestamp_str = str(timestamp_str).strip().strip('"')
-
-            # Remove milliseconds (everything after AM/PM)
             if " AM." in timestamp_str:
                 timestamp_str = timestamp_str.split(" AM.")[0] + " AM"
             elif " PM." in timestamp_str:
                 timestamp_str = timestamp_str.split(" PM.")[0] + " PM"
-
-            # Parse OPC format: MM/DD/YYYY H:MM:SS AM/PM
-            dt = datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M:%S %p")
-
-            # Apply hour offset for timezone adjustment
-            if hour_offset != 0:
-                dt = dt + timedelta(hours=hour_offset)
-
-            # Convert to output format
-            return dt.strftime("%d-%b-%Y %H:%M:%S")
+            return datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M:%S %p")
         except ValueError:
-            # Return original if conversion fails
-            return timestamp_str
+            return datetime.min
 
     def populate_treeview(self, tree, df):
         """Populate a treeview with dataframe data."""
@@ -452,26 +408,8 @@ class TimestampConverterApp:
                 tree.column(col, width=min(max_width * 10, 300), minwidth=100)
 
         # Insert data
-        for _, row in df.iterrows():
-            values = [str(v) for v in row]
-            tree.insert("", tk.END, values=values)
-
-    def parse_timestamp_for_sort(self, timestamp_str):
-        """Parse OPC timestamp for sorting purposes."""
-        try:
-            timestamp_str = str(timestamp_str).strip().strip('"')
-
-            # Remove milliseconds (everything after AM/PM)
-            if " AM." in timestamp_str:
-                timestamp_str = timestamp_str.split(" AM.")[0] + " AM"
-            elif " PM." in timestamp_str:
-                timestamp_str = timestamp_str.split(" PM.")[0] + " PM"
-
-            # Parse OPC format: MM/DD/YYYY H:MM:SS AM/PM
-            return datetime.strptime(timestamp_str, "%m/%d/%Y %I:%M:%S %p")
-        except ValueError:
-            # Return a default datetime for unparseable timestamps
-            return datetime.min
+        for row in df.astype(str).values.tolist():
+            tree.insert("", tk.END, values=row)
 
     def upload_csv(self):
         """Handle multiple file upload (space-delimited OPC data or CSV)."""
@@ -502,12 +440,10 @@ class TimestampConverterApp:
             # Concatenate all dataframes
             self.original_df = pd.concat(dataframes, ignore_index=True)
 
-            # Parse timestamps for sorting
-            self.original_df["_parsed_ts"] = self.original_df["Timestamp"].apply(self.parse_timestamp_for_sort)
-            self.original_df = self.original_df.sort_values("_parsed_ts").reset_index(drop=True)
-
-            # Drop the helper column
-            self.original_df = self.original_df.drop(columns=["_parsed_ts"])
+            # Sort by parsed timestamps
+            self.original_df = self.original_df.sort_values(
+                "Timestamp", key=lambda col: col.apply(self._parse_opc_timestamp)
+            ).reset_index(drop=True)
 
             # Clear the converted preview (user must click Apply)
             self.converted_df = None
