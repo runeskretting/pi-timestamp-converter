@@ -1,0 +1,14 @@
+{
+  "hour_offset": "1",
+  "remove_bad_quality": 1,
+  "remove_duplicates": 1,
+  "start_filter": 1,
+  "start_date": "04-Dec-2025",
+  "start_time": "00:00:00",
+  "end_filter": 0,
+  "end_date": "31-Dec-2025",
+  "end_time": "23:59:59",
+  "tagname_option": "None",
+  "custom_tagname": "",
+  "encoding": "ANSI"
+}

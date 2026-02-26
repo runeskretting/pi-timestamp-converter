@@ -43,37 +43,46 @@ class TimestampConverterApp:
         # Configure grid weights for responsive layout
         main_frame.columnconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(1, weight=0)
         main_frame.rowconfigure(2, weight=1)
 
-        # Left panel - Original CSV
+        # ── Row 0: Column headings ─────────────────────────────────────────
         left_label = ttk.Label(main_frame, text="Original CSV (US Format)", font=("", 12, "bold"))
         left_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 5))
 
+        right_label = ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold"))
+        right_label.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 5))
+
+        # ── Rows 1-2: Treeviews (both span 2 rows for equal height) ───────
         left_frame = ttk.Frame(main_frame)
         left_frame.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
         left_frame.columnconfigure(0, weight=1)
         left_frame.rowconfigure(0, weight=1)
-
-        # Original data treeview with scrollbars
         self.original_tree = self.create_treeview(left_frame)
 
-        # Upload button and hour offset in a row
-        left_controls = ttk.Frame(main_frame)
-        left_controls.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=10)
+        right_frame = ttk.Frame(main_frame)
+        right_frame.grid(row=1, column=1, rowspan=2, sticky="nsew", padx=(10, 0))
+        right_frame.columnconfigure(0, weight=1)
+        right_frame.rowconfigure(0, weight=1)
+        self.converted_tree = self.create_treeview(right_frame)
 
-        upload_btn = ttk.Button(left_controls, text="Upload CSV Files", command=self.upload_csv)
-        upload_btn.pack(side=tk.LEFT)
+        # ── Row 3, col 0: Settings LabelFrame ─────────────────────────────
+        settings_lf = ttk.LabelFrame(main_frame, text="Settings", padding=8)
+        settings_lf.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(10, 0))
+        settings_lf.columnconfigure(0, weight=1)
 
-        ttk.Label(left_controls, text="  Hour offset:").pack(side=tk.LEFT, padx=(10, 5))
+        # Settings row 0: Upload, Hour offset, Tagname
+        settings_row0 = ttk.Frame(settings_lf)
+        settings_row0.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+
+        ttk.Button(settings_row0, text="Upload CSV Files", command=self.upload_csv).pack(side=tk.LEFT)
+
+        ttk.Label(settings_row0, text="  Hour offset:").pack(side=tk.LEFT, padx=(10, 5))
         self.offset_var = tk.StringVar(value="0")
-        self.offset_entry = ttk.Entry(left_controls, textvariable=self.offset_var, width=5)
+        self.offset_entry = ttk.Entry(settings_row0, textvariable=self.offset_var, width=5)
         self.offset_entry.pack(side=tk.LEFT)
 
-        # Tagname section in its own frame to keep entry next to dropdown
-        tagname_frame = ttk.Frame(left_controls)
+        tagname_frame = ttk.Frame(settings_row0)
         tagname_frame.pack(side=tk.LEFT, padx=(10, 0))
-
         ttk.Label(tagname_frame, text="Tagname:").pack(side=tk.LEFT, padx=(0, 5))
         self.tagname_option_var = tk.StringVar(value="None")
         self.tagname_combo = ttk.Combobox(
@@ -85,118 +94,94 @@ class TimestampConverterApp:
         )
         self.tagname_combo.pack(side=tk.LEFT)
         self.tagname_combo.bind("<<ComboboxSelected>>", self.on_tagname_option_changed)
-
         self.custom_tagname_var = tk.StringVar()
         self.custom_tagname_entry = ttk.Entry(tagname_frame, textvariable=self.custom_tagname_var, width=30)
         self.custom_tagname_entry.pack(side=tk.LEFT, padx=(5, 0))
         self.custom_tagname_entry.pack_forget()  # Hidden by default
 
+        # Settings row 1: Checkboxes
+        settings_row1 = ttk.Frame(settings_lf)
+        settings_row1.grid(row=1, column=0, sticky="ew", pady=(0, 5))
         self.remove_bad_quality_var = tk.IntVar(value=0)
-        remove_bad_check = ttk.Checkbutton(
-            left_controls,
-            text="Remove bad quality",
-            variable=self.remove_bad_quality_var,
-            onvalue=1,
-            offvalue=0
-        )
-        remove_bad_check.pack(side=tk.LEFT, padx=(15, 0))
-
+        ttk.Checkbutton(
+            settings_row1, text="Remove bad quality",
+            variable=self.remove_bad_quality_var, onvalue=1, offvalue=0
+        ).pack(side=tk.LEFT)
         self.remove_duplicates_var = tk.IntVar(value=0)
-        remove_dup_check = ttk.Checkbutton(
-            left_controls,
-            text="Remove duplicate timestamps",
-            variable=self.remove_duplicates_var,
-            onvalue=1,
-            offvalue=0
-        )
-        remove_dup_check.pack(side=tk.LEFT, padx=(15, 0))
+        ttk.Checkbutton(
+            settings_row1, text="Remove duplicate timestamps",
+            variable=self.remove_duplicates_var, onvalue=1, offvalue=0
+        ).pack(side=tk.LEFT, padx=(15, 0))
 
-        self.apply_btn = tk.Button(left_controls, text="Apply", command=self.apply_conversion)
-        self.apply_btn.pack(side=tk.RIGHT)
-        self._apply_default_bg = self.apply_btn.cget("background")
-
-        # Highlight Apply button when any option changes
+        # Highlight Apply when any setting changes
         for var in (self.offset_var, self.tagname_option_var, self.custom_tagname_var,
                     self.remove_bad_quality_var, self.remove_duplicates_var):
             var.trace_add("write", lambda *_: self._highlight_apply())
 
-        # Right panel - Converted CSV
-        right_label = ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold"))
-        right_label.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 5))
+        # ── Row 3, col 1: Export LabelFrame ───────────────────────────────
+        export_lf = ttk.LabelFrame(main_frame, text="Export", padding=8)
+        export_lf.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(10, 0))
+        export_lf.columnconfigure(0, weight=1)
 
-        # Filter controls above the converted treeview
-        filter_frame = ttk.Frame(main_frame)
-        filter_frame.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(0, 5))
-
-        # Start filter
+        # Export row 0: Start / End date-time filters
+        filter_row = ttk.Frame(export_lf)
+        filter_row.grid(row=0, column=0, sticky="ew", pady=(0, 5))
         self.start_filter_var, self.start_date_var, self.start_time_var, \
             self.start_date_entry, self.start_time_entry = \
-            self._create_filter_row(filter_frame, "Start:", "01-Jan-2025", "00:00:00")
-
-        # Spacer
-        ttk.Label(filter_frame, text="   ").pack(side=tk.LEFT)
-
-        # End filter
+            self._create_filter_row(filter_row, "Start:", "01-Jan-2025", "00:00:00")
+        ttk.Label(filter_row, text="   ").pack(side=tk.LEFT)
         self.end_filter_var, self.end_date_var, self.end_time_var, \
             self.end_date_entry, self.end_time_entry = \
-            self._create_filter_row(filter_frame, "End:", "31-Dec-2025", "23:59:59")
+            self._create_filter_row(filter_row, "End:", "31-Dec-2025", "23:59:59")
 
-        # Highlight Apply button when any filter option changes
+        # Highlight Apply when any filter changes
         for var in (self.start_filter_var, self.end_filter_var,
                     self.start_date_var, self.end_date_var,
                     self.start_time_var, self.end_time_var):
             var.trace_add("write", lambda *_: self._highlight_apply())
 
-        # Converted data treeview with scrollbars (below filters)
-        right_frame = ttk.Frame(main_frame)
-        right_frame.grid(row=2, column=1, sticky="nsew", padx=(10, 0))
-        right_frame.columnconfigure(0, weight=1)
-        right_frame.rowconfigure(0, weight=1)
-
-        self.converted_tree = self.create_treeview(right_frame)
-
-        # Right panel controls
-        right_controls = ttk.Frame(main_frame)
-        right_controls.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=10)
-
-        ttk.Button(right_controls, text="Save Preset", command=self.save_preset).pack(side=tk.LEFT)
-        ttk.Button(right_controls, text="Load Preset", command=self.load_preset).pack(side=tk.LEFT, padx=(5, 20))
-
-        ttk.Label(right_controls, text="Encoding:").pack(side=tk.LEFT)
+        # Export row 1: Preset, Encoding, Download
+        export_row = ttk.Frame(export_lf)
+        export_row.grid(row=1, column=0, sticky="ew")
+        ttk.Button(export_row, text="Save Preset", command=self.save_preset).pack(side=tk.LEFT)
+        ttk.Button(export_row, text="Load Preset", command=self.load_preset).pack(side=tk.LEFT, padx=(5, 20))
+        ttk.Label(export_row, text="Encoding:").pack(side=tk.LEFT)
         self.encoding_var = tk.StringVar(value="ANSI")
         encoding_combo = ttk.Combobox(
-            right_controls,
+            export_row,
             textvariable=self.encoding_var,
             values=["ANSI", "UTF-8"],
             state="readonly",
             width=6
         )
         encoding_combo.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(export_row, text="Download Converted CSV", command=self.download_csv).pack(side=tk.RIGHT)
 
-        download_btn = ttk.Button(right_controls, text="Download Converted CSV", command=self.download_csv)
-        download_btn.pack(side=tk.RIGHT)
+        # ── Row 4: Batch Queue LabelFrame ─────────────────────────────────
+        queue_lf = ttk.LabelFrame(main_frame, text="Batch Queue", padding=8)
+        queue_lf.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        queue_lf.columnconfigure(2, weight=1)
 
-        # Batch queue controls row
-        queue_frame = ttk.Frame(main_frame)
-        queue_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(5, 0))
-
-        ttk.Label(queue_frame, text="Batch Queue:", font=("", 9, "bold")).pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Button(queue_frame, text="Source Dir", command=self._select_queue_source_dir).pack(side=tk.LEFT)
+        ttk.Label(queue_lf, text="Source Dir:").grid(row=0, column=0, sticky="w", padx=(0, 5))
+        ttk.Button(queue_lf, text="Select", command=self._select_queue_source_dir).grid(row=0, column=1, padx=(0, 5))
         self._queue_source_dir_var = tk.StringVar(value="Not selected")
-        ttk.Label(queue_frame, textvariable=self._queue_source_dir_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+        ttk.Label(queue_lf, textvariable=self._queue_source_dir_var, anchor="w").grid(row=0, column=2, sticky="ew")
 
-        ttk.Button(queue_frame, text="Queue File", command=self._select_queue_file).pack(side=tk.LEFT)
+        ttk.Label(queue_lf, text="Queue File:").grid(row=1, column=0, sticky="w", padx=(0, 5), pady=(4, 0))
+        ttk.Button(queue_lf, text="Select", command=self._select_queue_file).grid(row=1, column=1, padx=(0, 5), pady=(4, 0))
         self._queue_file_var = tk.StringVar(value="Not selected")
-        ttk.Label(queue_frame, textvariable=self._queue_file_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+        ttk.Label(queue_lf, textvariable=self._queue_file_var, anchor="w").grid(row=1, column=2, sticky="ew", pady=(4, 0))
 
-        ttk.Button(queue_frame, text="Output Dir", command=self._select_queue_output_dir).pack(side=tk.LEFT)
+        ttk.Label(queue_lf, text="Output Dir:").grid(row=2, column=0, sticky="w", padx=(0, 5), pady=(4, 0))
+        ttk.Button(queue_lf, text="Select", command=self._select_queue_output_dir).grid(row=2, column=1, padx=(0, 5), pady=(4, 0))
         self._queue_output_dir_var = tk.StringVar(value="Not selected")
-        ttk.Label(queue_frame, textvariable=self._queue_output_dir_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+        ttk.Label(queue_lf, textvariable=self._queue_output_dir_var, anchor="w").grid(row=2, column=2, sticky="ew", pady=(4, 0))
 
-        ttk.Button(queue_frame, text="Run Queue", command=self.run_queue).pack(side=tk.RIGHT)
+        self.apply_btn = tk.Button(queue_lf, text="Apply", command=self.apply_conversion)
+        self.apply_btn.grid(row=0, column=3, rowspan=3, sticky="ns", padx=(15, 0))
+        self._apply_default_bg = self.apply_btn.cget("background")
 
-        # Status bar with row counts
+        # ── Row 5: Status bar ──────────────────────────────────────────────
         status_frame = ttk.Frame(main_frame)
         status_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         status_frame.columnconfigure(0, weight=1)
@@ -383,7 +368,7 @@ class TimestampConverterApp:
         return converted_df, stats
 
     def apply_conversion(self):
-        """Apply conversion settings. In queue mode, exports batch; otherwise previews."""
+        """Apply conversion settings and preview the loaded CSV."""
         self._unhighlight_apply()
 
         # Queue mode: all three queue paths are set — run batch export
@@ -475,10 +460,13 @@ class TimestampConverterApp:
         if not file_paths:
             return
 
-        # Switching to manual mode — clear any active queue file
-        if self._queue_file_path:
-            self._queue_file_path = ""
-            self._queue_file_var.set("Not selected")
+        # Switching to manual mode — clear entire batch queue
+        self._queue_source_dir = ""
+        self._queue_source_dir_var.set("Not selected")
+        self._queue_file_path = ""
+        self._queue_file_var.set("Not selected")
+        self._queue_output_dir = ""
+        self._queue_output_dir_var.set("Not selected")
 
         try:
             # Read and combine all selected files
@@ -558,6 +546,14 @@ class TimestampConverterApp:
             self._queue_source_dir = d
             name = os.path.basename(d) or d
             self._queue_source_dir_var.set(name[:30])
+            # Switching to queue mode — clear manually loaded data
+            if self.original_df is not None:
+                self.original_df = None
+                self.converted_df = None
+                self.original_tree.delete(*self.original_tree.get_children())
+                self.converted_tree.delete(*self.converted_tree.get_children())
+                self.left_count_var.set("")
+                self.right_count_var.set("")
             self._update_queue_status()
 
     def _select_queue_file(self):
@@ -587,10 +583,18 @@ class TimestampConverterApp:
             self._queue_output_dir = d
             name = os.path.basename(d) or d
             self._queue_output_dir_var.set(name[:30])
+            # Switching to queue mode — clear manually loaded data
+            if self.original_df is not None:
+                self.original_df = None
+                self.converted_df = None
+                self.original_tree.delete(*self.original_tree.get_children())
+                self.converted_tree.delete(*self.converted_tree.get_children())
+                self.left_count_var.set("")
+                self.right_count_var.set("")
             self._update_queue_status()
 
     def _update_queue_status(self):
-        """Update status bar to reflect queue setup progress; highlight Apply when ready."""
+        """Update status bar to reflect queue setup progress."""
         if self._queue_source_dir and self._queue_file_path and self._queue_output_dir:
             self._highlight_apply()
             self.status_var.set("Queue ready — click Apply to export")
