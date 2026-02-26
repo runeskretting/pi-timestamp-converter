@@ -36,21 +36,28 @@ class TimestampConverterApp:
 
     def setup_ui(self):
         """Build the main UI with original/converted data panels and controls."""
-        # Main container with padding
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Configure grid weights for responsive layout
         main_frame.columnconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(2, weight=1)
 
-        # ── Row 0: Column headings ─────────────────────────────────────────
-        left_label = ttk.Label(main_frame, text="Original CSV (US Format)", font=("", 12, "bold"))
-        left_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 5))
+        self._setup_preview_panes(main_frame)
+        self._setup_settings_panel(main_frame)
+        self._setup_export_panel(main_frame)
+        self._setup_queue_panel(main_frame)
+        self._setup_status_bar(main_frame)
 
-        right_label = ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold"))
-        right_label.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 5))
+    def _setup_preview_panes(self, main_frame):
+        """Add column headings and both data preview treeviews (rows 0-2)."""
+        # ── Row 0: Column headings ─────────────────────────────────────────
+        ttk.Label(main_frame, text="Original CSV (US Format)", font=("", 12, "bold")).grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 5)
+        )
+        ttk.Label(main_frame, text="Converted Preview (DD-Mon-YYYY Format)", font=("", 12, "bold")).grid(
+            row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 5)
+        )
 
         # ── Rows 1-2: Treeviews (both span 2 rows for equal height) ───────
         left_frame = ttk.Frame(main_frame)
@@ -65,7 +72,8 @@ class TimestampConverterApp:
         right_frame.rowconfigure(0, weight=1)
         self.converted_tree = self.create_treeview(right_frame)
 
-        # ── Row 3, col 0: Settings LabelFrame ─────────────────────────────
+    def _setup_settings_panel(self, main_frame):
+        """Build the Settings LabelFrame (row 3, column 0)."""
         settings_lf = ttk.LabelFrame(main_frame, text="Settings", padding=8)
         settings_lf.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(10, 0))
         settings_lf.columnconfigure(0, weight=1)
@@ -118,7 +126,8 @@ class TimestampConverterApp:
                     self.remove_bad_quality_var, self.remove_duplicates_var):
             var.trace_add("write", lambda *_: self._highlight_apply())
 
-        # ── Row 3, col 1: Export LabelFrame ───────────────────────────────
+    def _setup_export_panel(self, main_frame):
+        """Build the Export LabelFrame (row 3, column 1)."""
         export_lf = ttk.LabelFrame(main_frame, text="Export", padding=8)
         export_lf.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(10, 0))
         export_lf.columnconfigure(0, weight=1)
@@ -157,7 +166,8 @@ class TimestampConverterApp:
         encoding_combo.pack(side=tk.LEFT, padx=(5, 0))
         ttk.Button(export_row, text="Download Converted CSV", command=self.download_csv).pack(side=tk.RIGHT)
 
-        # ── Row 4: Batch Queue LabelFrame ─────────────────────────────────
+    def _setup_queue_panel(self, main_frame):
+        """Build the Batch Queue LabelFrame (row 4)."""
         queue_lf = ttk.LabelFrame(main_frame, text="Batch Queue", padding=8)
         queue_lf.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         queue_lf.columnconfigure(2, weight=1)
@@ -181,22 +191,26 @@ class TimestampConverterApp:
         self.apply_btn.grid(row=0, column=3, rowspan=3, sticky="ns", padx=(15, 0))
         self._apply_default_bg = self.apply_btn.cget("background")
 
-        # ── Row 5: Status bar ──────────────────────────────────────────────
+    def _setup_status_bar(self, main_frame):
+        """Build the status bar (row 5)."""
         status_frame = ttk.Frame(main_frame)
         status_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         status_frame.columnconfigure(0, weight=1)
 
         self.status_var = tk.StringVar(value="Ready - Upload a CSV file to begin")
-        status_label = ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w")
-        status_label.grid(row=0, column=0, sticky="ew")
+        ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w").grid(
+            row=0, column=0, sticky="ew"
+        )
 
         self.left_count_var = tk.StringVar(value="")
-        left_count_label = ttk.Label(status_frame, textvariable=self.left_count_var, relief=tk.SUNKEN, anchor="center", width=20)
-        left_count_label.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        ttk.Label(status_frame, textvariable=self.left_count_var, relief=tk.SUNKEN, anchor="center", width=20).grid(
+            row=0, column=1, sticky="ew", padx=(2, 0)
+        )
 
         self.right_count_var = tk.StringVar(value="")
-        right_count_label = ttk.Label(status_frame, textvariable=self.right_count_var, relief=tk.SUNKEN, anchor="center", width=20)
-        right_count_label.grid(row=0, column=2, sticky="ew", padx=(2, 0))
+        ttk.Label(status_frame, textvariable=self.right_count_var, relief=tk.SUNKEN, anchor="center", width=20).grid(
+            row=0, column=2, sticky="ew", padx=(2, 0)
+        )
 
     def create_treeview(self, parent):
         """Create a treeview widget with scrollbars."""
@@ -267,6 +281,24 @@ class TimestampConverterApp:
     def _unhighlight_apply(self):
         """Reset the Apply button to its default appearance."""
         self.apply_btn.configure(bg=self._apply_default_bg, activebackground=self._apply_default_bg)
+
+    def _clear_manual_data(self):
+        """Clear manually loaded CSV data and both preview panes."""
+        self.original_df = None
+        self.converted_df = None
+        self.original_tree.delete(*self.original_tree.get_children())
+        self.converted_tree.delete(*self.converted_tree.get_children())
+        self.left_count_var.set("")
+        self.right_count_var.set("")
+
+    def _clear_queue_paths(self):
+        """Reset all batch queue path selections to 'Not selected'."""
+        self._queue_source_dir = ""
+        self._queue_source_dir_var.set("Not selected")
+        self._queue_file_path = ""
+        self._queue_file_var.set("Not selected")
+        self._queue_output_dir = ""
+        self._queue_output_dir_var.set("Not selected")
 
     def _toggle_filter(self, var, date_entry, time_entry):
         """Enable/disable filter date and time fields based on checkbox."""
@@ -461,12 +493,7 @@ class TimestampConverterApp:
             return
 
         # Switching to manual mode — clear entire batch queue
-        self._queue_source_dir = ""
-        self._queue_source_dir_var.set("Not selected")
-        self._queue_file_path = ""
-        self._queue_file_var.set("Not selected")
-        self._queue_output_dir = ""
-        self._queue_output_dir_var.set("Not selected")
+        self._clear_queue_paths()
 
         try:
             # Read and combine all selected files
@@ -548,12 +575,7 @@ class TimestampConverterApp:
             self._queue_source_dir_var.set(name[:30])
             # Switching to queue mode — clear manually loaded data
             if self.original_df is not None:
-                self.original_df = None
-                self.converted_df = None
-                self.original_tree.delete(*self.original_tree.get_children())
-                self.converted_tree.delete(*self.converted_tree.get_children())
-                self.left_count_var.set("")
-                self.right_count_var.set("")
+                self._clear_manual_data()
             self._update_queue_status()
 
     def _select_queue_file(self):
@@ -568,12 +590,7 @@ class TimestampConverterApp:
             self._queue_file_var.set(name[:30])
             # Switching to queue mode — clear any manually loaded data
             if self.original_df is not None:
-                self.original_df = None
-                self.converted_df = None
-                self.original_tree.delete(*self.original_tree.get_children())
-                self.converted_tree.delete(*self.converted_tree.get_children())
-                self.left_count_var.set("")
-                self.right_count_var.set("")
+                self._clear_manual_data()
             self._update_queue_status()
 
     def _select_queue_output_dir(self):
@@ -585,12 +602,7 @@ class TimestampConverterApp:
             self._queue_output_dir_var.set(name[:30])
             # Switching to queue mode — clear manually loaded data
             if self.original_df is not None:
-                self.original_df = None
-                self.converted_df = None
-                self.original_tree.delete(*self.original_tree.get_children())
-                self.converted_tree.delete(*self.converted_tree.get_children())
-                self.left_count_var.set("")
-                self.right_count_var.set("")
+                self._clear_manual_data()
             self._update_queue_status()
 
     def _update_queue_status(self):
