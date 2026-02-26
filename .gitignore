@@ -25,6 +25,7 @@ build/
 *.csv
 !sample*.csv
 screenshot*.packaging
+202512181337/
 
 # Environment variables
 .env
@@ -40,3 +41,6 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Claude
+CLAUDE.md

@@ -9,6 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 from datetime import datetime, timedelta
 import pandas as pd
 import os
+import json
 class TimestampConverterApp:
     def __init__(self, root):
         """Initialize the application with the main window."""
@@ -22,7 +23,16 @@ class TimestampConverterApp:
         self.previous_tagname_option = "None"  # Track previous selection
         self._first_filename = ""  # Store first uploaded filename for tagname default
 
+        self._queue_source_dir = ""
+        self._queue_file_path = ""
+        self._queue_output_dir = ""
+
+        self._last_preset_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "last_preset.json"
+        )
+
         self.setup_ui()
+        self._try_load_last_preset()
 
     def setup_ui(self):
         """Build the main UI with original/converted data panels and controls."""
@@ -149,6 +159,9 @@ class TimestampConverterApp:
         right_controls = ttk.Frame(main_frame)
         right_controls.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=10)
 
+        ttk.Button(right_controls, text="Save Preset", command=self.save_preset).pack(side=tk.LEFT)
+        ttk.Button(right_controls, text="Load Preset", command=self.load_preset).pack(side=tk.LEFT, padx=(5, 20))
+
         ttk.Label(right_controls, text="Encoding:").pack(side=tk.LEFT)
         self.encoding_var = tk.StringVar(value="ANSI")
         encoding_combo = ttk.Combobox(
@@ -163,9 +176,29 @@ class TimestampConverterApp:
         download_btn = ttk.Button(right_controls, text="Download Converted CSV", command=self.download_csv)
         download_btn.pack(side=tk.RIGHT)
 
+        # Batch queue controls row
+        queue_frame = ttk.Frame(main_frame)
+        queue_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+
+        ttk.Label(queue_frame, text="Batch Queue:", font=("", 9, "bold")).pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Button(queue_frame, text="Source Dir", command=self._select_queue_source_dir).pack(side=tk.LEFT)
+        self._queue_source_dir_var = tk.StringVar(value="Not selected")
+        ttk.Label(queue_frame, textvariable=self._queue_source_dir_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+
+        ttk.Button(queue_frame, text="Queue File", command=self._select_queue_file).pack(side=tk.LEFT)
+        self._queue_file_var = tk.StringVar(value="Not selected")
+        ttk.Label(queue_frame, textvariable=self._queue_file_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+
+        ttk.Button(queue_frame, text="Output Dir", command=self._select_queue_output_dir).pack(side=tk.LEFT)
+        self._queue_output_dir_var = tk.StringVar(value="Not selected")
+        ttk.Label(queue_frame, textvariable=self._queue_output_dir_var, width=30, anchor="w").pack(side=tk.LEFT, padx=(5, 15))
+
+        ttk.Button(queue_frame, text="Run Queue", command=self.run_queue).pack(side=tk.RIGHT)
+
         # Status bar with row counts
         status_frame = ttk.Frame(main_frame)
-        status_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        status_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         status_frame.columnconfigure(0, weight=1)
 
         self.status_var = tk.StringVar(value="Ready - Upload a CSV file to begin")
@@ -265,35 +298,30 @@ class TimestampConverterApp:
             t = datetime.strptime(default_time, "%H:%M:%S").time()
         return datetime.combine(date, t)
 
-    def apply_conversion(self):
-        """Apply conversion settings and update the preview panel."""
-        self._unhighlight_apply()
-        if self.original_df is None:
-            messagebox.showwarning("Warning", "No data loaded. Please upload CSV files first.")
-            return
+    def _convert_df(self, source_df, tagname):
+        """Convert a source DataFrame applying all active filters and settings.
 
+        Returns (converted_df, stats) where stats is a dict with keys:
+        bad_quality_removed, rows_filtered, duplicates_removed.
+
+        Raises ValueError if offset or date inputs are invalid.
+        """
         try:
             hour_offset = int(self.offset_var.get())
         except ValueError:
-            messagebox.showerror("Error", "Hour offset must be a valid integer (e.g., -5, 0, +3)")
-            return
+            raise ValueError("Hour offset must be a valid integer (e.g., -5, 0, +3)")
 
-        # Determine tagname
-        tagname_option = self.tagname_option_var.get()
-        tagname = None
-        if tagname_option == "Custom":
-            tagname = self.custom_tagname_var.get().strip() or None
+        stats = {"bad_quality_removed": 0, "rows_filtered": 0, "duplicates_removed": 0}
 
         # Filter out bad quality rows
-        bad_quality_removed = 0
-        source_df = self.original_df
+        df = source_df
         if self.remove_bad_quality_var.get() == 1:
-            original_count = len(source_df)
-            source_df = source_df[source_df["Quality"].astype(str).str.strip() != "0x100400c0"].reset_index(drop=True)
-            bad_quality_removed = original_count - len(source_df)
+            original_count = len(df)
+            df = df[df["Quality"].astype(str).str.strip() != "0x100400c0"].reset_index(drop=True)
+            stats["bad_quality_removed"] = original_count - len(df)
 
         # Vectorized timestamp conversion
-        cleaned = source_df["Timestamp"].astype(str).str.strip().str.strip('"')
+        cleaned = df["Timestamp"].astype(str).str.strip().str.strip('"')
         cleaned = cleaned.str.replace(r' ([AP]M)\.\d+', r' \1', regex=True)
         parsed = pd.to_datetime(cleaned, format="%m/%d/%Y %I:%M:%S %p", errors="coerce")
         if hour_offset != 0:
@@ -302,27 +330,26 @@ class TimestampConverterApp:
         # Keep original string for rows that failed to parse
         failed = parsed.isna()
         if failed.any():
-            converted_timestamps[failed] = source_df["Timestamp"][failed]
+            converted_timestamps[failed] = df["Timestamp"][failed]
 
         # Build output dataframe
         if tagname:
-            self.converted_df = pd.DataFrame({
+            converted_df = pd.DataFrame({
                 "Tagname": tagname,
                 "Timestamp": converted_timestamps,
-                "Value": source_df["Value"]
+                "Value": df["Value"]
             })
         else:
-            self.converted_df = pd.DataFrame({
+            converted_df = pd.DataFrame({
                 "Timestamp": converted_timestamps,
-                "Value": source_df["Value"]
+                "Value": df["Value"]
             })
 
         # Apply time range filters
-        rows_filtered = 0
         if self.start_filter_var.get() == 1 or self.end_filter_var.get() == 1:
-            pre_filter_count = len(self.converted_df)
+            pre_filter_count = len(converted_df)
             parsed_ts = pd.to_datetime(
-                self.converted_df["Timestamp"], format="%d-%b-%Y %H:%M:%S", errors="coerce"
+                converted_df["Timestamp"], format="%d-%b-%Y %H:%M:%S", errors="coerce"
             )
             mask = parsed_ts.notna()
 
@@ -333,8 +360,7 @@ class TimestampConverterApp:
                     )
                     mask = mask & (parsed_ts >= pd.Timestamp(start_dt))
                 except ValueError:
-                    messagebox.showerror("Error", "Invalid start date. Use DD-Mon-YYYY format (e.g. 01-Jan-2025)")
-                    return
+                    raise ValueError("Invalid start date. Use DD-Mon-YYYY format (e.g. 01-Jan-2025)")
 
             if self.end_filter_var.get() == 1:
                 try:
@@ -343,18 +369,44 @@ class TimestampConverterApp:
                     )
                     mask = mask & (parsed_ts <= pd.Timestamp(end_dt))
                 except ValueError:
-                    messagebox.showerror("Error", "Invalid end date. Use DD-Mon-YYYY format (e.g. 31-Dec-2025)")
-                    return
+                    raise ValueError("Invalid end date. Use DD-Mon-YYYY format (e.g. 31-Dec-2025)")
 
-            self.converted_df = self.converted_df[mask].reset_index(drop=True)
-            rows_filtered = pre_filter_count - len(self.converted_df)
+            converted_df = converted_df[mask].reset_index(drop=True)
+            stats["rows_filtered"] = pre_filter_count - len(converted_df)
 
         # Remove duplicate timestamps if checkbox is checked
-        duplicates_removed = 0
         if self.remove_duplicates_var.get() == 1:
-            original_count = len(self.converted_df)
-            self.converted_df = self.converted_df.drop_duplicates(subset=["Timestamp"], keep="first").reset_index(drop=True)
-            duplicates_removed = original_count - len(self.converted_df)
+            original_count = len(converted_df)
+            converted_df = converted_df.drop_duplicates(subset=["Timestamp"], keep="first").reset_index(drop=True)
+            stats["duplicates_removed"] = original_count - len(converted_df)
+
+        return converted_df, stats
+
+    def apply_conversion(self):
+        """Apply conversion settings. In queue mode, exports batch; otherwise previews."""
+        self._unhighlight_apply()
+
+        # Queue mode: all three queue paths are set — run batch export
+        if self._queue_source_dir and self._queue_file_path and self._queue_output_dir:
+            self.run_queue()
+            return
+
+        # Manual mode: preview conversion of the loaded file
+        if self.original_df is None:
+            messagebox.showwarning("Warning", "No data loaded. Please upload CSV files first.")
+            return
+
+        # Determine tagname
+        tagname_option = self.tagname_option_var.get()
+        tagname = None
+        if tagname_option == "Custom":
+            tagname = self.custom_tagname_var.get().strip() or None
+
+        try:
+            self.converted_df, stats = self._convert_df(self.original_df, tagname)
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+            return
 
         # Update display
         self.populate_treeview(self.converted_tree, self.converted_df)
@@ -362,11 +414,13 @@ class TimestampConverterApp:
         # Update status and row counts
         row_count = len(self.converted_df)
         self.right_count_var.set(f"Converted: {row_count} rows")
+        hour_offset = int(self.offset_var.get())
         offset_msg = f" (offset: {hour_offset:+d}h)" if hour_offset != 0 else ""
-        bad_msg = f", {bad_quality_removed} bad quality removed" if bad_quality_removed > 0 else ""
-        filter_msg = f", {rows_filtered} rows filtered out" if rows_filtered > 0 else ""
-        dup_msg = f", {duplicates_removed} duplicates removed" if duplicates_removed > 0 else ""
+        bad_msg = f", {stats['bad_quality_removed']} bad quality removed" if stats['bad_quality_removed'] > 0 else ""
+        filter_msg = f", {stats['rows_filtered']} rows filtered out" if stats['rows_filtered'] > 0 else ""
+        dup_msg = f", {stats['duplicates_removed']} duplicates removed" if stats['duplicates_removed'] > 0 else ""
         self.status_var.set(f"Preview updated - {row_count} rows converted{offset_msg}{bad_msg}{filter_msg}{dup_msg}")
+        self._save_last_preset()
 
     def _parse_opc_timestamp(self, timestamp_str):
         """Parse OPC server timestamp into a datetime object.
@@ -420,6 +474,11 @@ class TimestampConverterApp:
 
         if not file_paths:
             return
+
+        # Switching to manual mode — clear any active queue file
+        if self._queue_file_path:
+            self._queue_file_path = ""
+            self._queue_file_var.set("Not selected")
 
         try:
             # Read and combine all selected files
@@ -490,6 +549,253 @@ class TimestampConverterApp:
             messagebox.showinfo("Success", f"File saved successfully:\n{file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save file:\n{str(e)}")
+
+
+    def _select_queue_source_dir(self):
+        """Open dialog to select the source directory for batch queue."""
+        d = filedialog.askdirectory(title="Select Source Directory")
+        if d:
+            self._queue_source_dir = d
+            name = os.path.basename(d) or d
+            self._queue_source_dir_var.set(name[:30])
+            self._update_queue_status()
+
+    def _select_queue_file(self):
+        """Open dialog to select the queue text file."""
+        f = filedialog.askopenfilename(
+            title="Select Queue File",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if f:
+            self._queue_file_path = f
+            name = os.path.basename(f)
+            self._queue_file_var.set(name[:30])
+            # Switching to queue mode — clear any manually loaded data
+            if self.original_df is not None:
+                self.original_df = None
+                self.converted_df = None
+                self.original_tree.delete(*self.original_tree.get_children())
+                self.converted_tree.delete(*self.converted_tree.get_children())
+                self.left_count_var.set("")
+                self.right_count_var.set("")
+            self._update_queue_status()
+
+    def _select_queue_output_dir(self):
+        """Open dialog to select the output directory for batch queue."""
+        d = filedialog.askdirectory(title="Select Output Directory")
+        if d:
+            self._queue_output_dir = d
+            name = os.path.basename(d) or d
+            self._queue_output_dir_var.set(name[:30])
+            self._update_queue_status()
+
+    def _update_queue_status(self):
+        """Update status bar to reflect queue setup progress; highlight Apply when ready."""
+        if self._queue_source_dir and self._queue_file_path and self._queue_output_dir:
+            self._highlight_apply()
+            self.status_var.set("Queue ready — click Apply to export")
+        else:
+            missing = []
+            if not self._queue_source_dir:
+                missing.append("source dir")
+            if not self._queue_file_path:
+                missing.append("queue file")
+            if not self._queue_output_dir:
+                missing.append("output dir")
+            self.status_var.set(f"Queue: still need — {', '.join(missing)}")
+
+    def run_queue(self):
+        """Run the batch queue export: one output CSV per tag in the queue file."""
+        # Validate all paths are set
+        if not self._queue_source_dir:
+            messagebox.showerror("Error", "Please select a source directory.")
+            return
+        if not self._queue_file_path:
+            messagebox.showerror("Error", "Please select a queue file.")
+            return
+        if not self._queue_output_dir:
+            messagebox.showerror("Error", "Please select an output directory.")
+            return
+
+        # Validate offset
+        try:
+            int(self.offset_var.get())
+        except ValueError:
+            messagebox.showerror("Error", "Hour offset must be a valid integer (e.g., -5, 0, +3)")
+            return
+
+        # Read queue file
+        try:
+            with open(self._queue_file_path, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read queue file:\n{str(e)}")
+            return
+
+        tags = [line.strip() for line in lines if line.strip()]
+        if not tags:
+            messagebox.showwarning("Warning", "Queue file is empty or contains no valid tag names.")
+            return
+
+        encoding = "utf-8" if self.encoding_var.get() == "UTF-8" else "cp1252"
+
+        exported = 0
+        skipped = []
+        errors = []
+
+        for tag in tags:
+            # Find matching files in source dir
+            try:
+                matching = [
+                    fname for fname in os.listdir(self._queue_source_dir)
+                    if fname.startswith(tag) and (fname.endswith(".csv") or fname.endswith(".txt"))
+                ]
+            except Exception as e:
+                errors.append(f"{tag}: {str(e)}")
+                continue
+
+            if not matching:
+                skipped.append(tag)
+                continue
+
+            # Read and concat matching files
+            try:
+                dataframes = []
+                for fname in matching:
+                    fpath = os.path.join(self._queue_source_dir, fname)
+                    df = pd.read_csv(fpath, header=None, names=["Timestamp", "Value", "Quality"])
+                    dataframes.append(df)
+
+                combined = pd.concat(dataframes, ignore_index=True)
+                combined = combined.sort_values(
+                    "Timestamp", key=lambda col: col.apply(self._parse_opc_timestamp)
+                ).reset_index(drop=True)
+
+                converted_df, _ = self._convert_df(combined, tagname=tag)
+
+                out_path = os.path.join(self._queue_output_dir, tag + ".csv")
+                converted_df.to_csv(out_path, index=False, header=False, encoding=encoding)
+                exported += 1
+            except Exception as e:
+                errors.append(f"{tag}: {str(e)}")
+                continue
+
+        # Update status bar
+        skip_msg = f", {len(skipped)} skipped (no files found)" if skipped else ""
+        err_msg = f", {len(errors)} failed" if errors else ""
+        self.status_var.set(f"Queue done: {exported} exported{skip_msg}{err_msg}")
+        self._save_last_preset()
+
+        # Show summary dialog
+        if skipped or errors:
+            details = []
+            if skipped:
+                details.append("Skipped (no matching files):\n" + "\n".join(f"  \u2022 {t}" for t in skipped))
+            if errors:
+                details.append("Errors:\n" + "\n".join(f"  \u2022 {e}" for e in errors))
+            messagebox.showinfo(
+                "Queue Complete",
+                f"Exported: {exported} file(s)\n\n" + "\n\n".join(details)
+            )
+        else:
+            messagebox.showinfo("Queue Complete", f"Successfully exported {exported} file(s).")
+
+
+    def _collect_preset(self):
+        """Gather all current settings into a dict."""
+        return {
+            "hour_offset": self.offset_var.get(),
+            "remove_bad_quality": self.remove_bad_quality_var.get(),
+            "remove_duplicates": self.remove_duplicates_var.get(),
+            "start_filter": self.start_filter_var.get(),
+            "start_date": self.start_date_var.get(),
+            "start_time": self.start_time_var.get(),
+            "end_filter": self.end_filter_var.get(),
+            "end_date": self.end_date_var.get(),
+            "end_time": self.end_time_var.get(),
+            "tagname_option": self.tagname_option_var.get(),
+            "custom_tagname": self.custom_tagname_var.get(),
+            "encoding": self.encoding_var.get(),
+        }
+
+    def _apply_preset(self, data):
+        """Apply a settings dict to all UI variables."""
+        self.offset_var.set(data.get("hour_offset", "0"))
+        self.remove_bad_quality_var.set(data.get("remove_bad_quality", 0))
+        self.remove_duplicates_var.set(data.get("remove_duplicates", 0))
+
+        self.start_filter_var.set(data.get("start_filter", 0))
+        self.start_date_var.set(data.get("start_date", "01-Jan-2025"))
+        self.start_time_var.set(data.get("start_time", "00:00:00"))
+        self._toggle_filter(self.start_filter_var, self.start_date_entry, self.start_time_entry)
+
+        self.end_filter_var.set(data.get("end_filter", 0))
+        self.end_date_var.set(data.get("end_date", "31-Dec-2025"))
+        self.end_time_var.set(data.get("end_time", "23:59:59"))
+        self._toggle_filter(self.end_filter_var, self.end_date_entry, self.end_time_entry)
+
+        opt = data.get("tagname_option", "None")
+        self.tagname_option_var.set(opt)
+        self.custom_tagname_var.set(data.get("custom_tagname", ""))
+        self.previous_tagname_option = opt
+        if opt == "Custom":
+            self.custom_tagname_entry.pack(side=tk.LEFT, padx=(5, 0))
+        else:
+            self.custom_tagname_entry.pack_forget()
+
+        self.encoding_var.set(data.get("encoding", "ANSI"))
+
+    def _save_last_preset(self):
+        """Silently save current settings to last_preset.json."""
+        try:
+            with open(self._last_preset_path, "w", encoding="utf-8") as f:
+                json.dump(self._collect_preset(), f, indent=2)
+        except Exception:
+            pass
+
+    def _try_load_last_preset(self):
+        """Silently load last_preset.json on startup if it exists."""
+        if os.path.exists(self._last_preset_path):
+            try:
+                with open(self._last_preset_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self._apply_preset(data)
+                self._unhighlight_apply()
+            except Exception:
+                pass
+
+    def save_preset(self):
+        """Save current settings to a user-chosen JSON file."""
+        path = filedialog.asksaveasfilename(
+            title="Save Preset",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        if path:
+            data = self._collect_preset()
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                self._save_last_preset()
+                self.status_var.set(f"Preset saved: {os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save preset:\n{str(e)}")
+
+    def load_preset(self):
+        """Load settings from a user-chosen JSON file."""
+        path = filedialog.askopenfilename(
+            title="Load Preset",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self._apply_preset(data)
+                self._unhighlight_apply()
+                self.status_var.set(f"Preset loaded: {os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load preset:\n{str(e)}")
 
 
 def main():
